@@ -111,6 +111,14 @@
       :body (:content note)}
      {:status 404}))
   (compojure.core/GET
+   "/refresh"
+   _
+   (do
+     (swap! notes (constantly (read-notes)))
+     {
+      :status 200
+      :body "ok"}))
+  (compojure.core/GET
    "/explore*"
    request
    (let [search-tags (into
