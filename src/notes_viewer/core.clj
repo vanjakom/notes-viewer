@@ -212,3 +212,13 @@
 
 (defn -main [& args]
   (println "running"))
+
+;; refresh notes on minute interval
+(def cron
+  (new
+   Thread
+   #(while true
+      (swap! notes (constantly (read-notes)))
+      (println "[refresh]" (System/currentTimeMillis))
+      (Thread/sleep 60000))))
+(.start cron)
