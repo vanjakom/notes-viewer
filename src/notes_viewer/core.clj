@@ -12,6 +12,7 @@
    [clj-common.path :as path]))
 
 (def notes-path ["Users" "vanja" "projects" "notes" "notes.md"])
+(def todo-path ["Users" "vanja" "projects" "notes" "todo.md"])
 
 (defn parse-tags [line]
   (let [line (if (.startsWith line "# ")
@@ -43,8 +44,8 @@
 #_(parse-tags "# #list #divcibare #to")
 #_(parse-tags "# notes concept")
 
-(defn read-notes []
-  (with-open [is (fs/input-stream notes-path)]
+(defn read-notes [path]
+  (with-open [is (fs/input-stream path)]
     (loop [lines (io/input-stream->line-seq is)
            notes []
            tags #{}
@@ -82,12 +83,16 @@
             :content (clojure.string/join "\n" buffer)})
           notes)))))
 
-(def notes (atom (read-notes)))
+(def notes (atom (read-notes notes-path)))
+(def todos (atom (read-notes todo-path)))
 
 ;; reread notes
-(do
-  (swap! notes (constantly (read-notes)))
+(defn reload-all []
+  (swap! notes (constantly (read-notes notes-path)))
+  (swap! todos (constantly (read-notes todo-path)))
   nil)
+
+(reload-all)
 
 (defn render-note-info [note]
   [:tr
@@ -97,6 +102,61 @@
     [:a
      {:href (str "/view/" (:id note)) :target "_blank"}
      "view"]]])
+
+(defn search [dataset-name dataset search-tags]
+  (let [search-tags-set (into #{} search-tags)
+        notes (filter
+               (fn [note]
+                 (=
+                  (count search-tags)
+                  (count
+                   (filter
+                    #(or
+                      (contains? (:tags note) (str "@" %))
+                      (contains? (:tags note) (str "#" %)))
+                    search-tags))))
+               dataset)
+        tags (reduce
+              (fn [state tag]
+                (if (not (contains? search-tags-set tag))
+                  (update-in
+                   state
+                   [tag]
+                   #(inc (or % 0)))
+                  state))
+              {}
+              (map
+               #(.substring % 1)
+               (mapcat
+                :tags
+                notes)))]
+    (println "[" dataset-name "]" search-tags)
+    {
+     :status 200
+     :body (hiccup/html
+            [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
+             [:table {:style "border-collapse:collapse;"}
+              (map
+               (fn [[tag count]]
+                 (list
+                  [:a
+                   {
+                    :href (str
+                           "/" dataset-name "/"
+                           (clojure.string/join
+                            "/"
+                            (conj search-tags tag)))}
+                   (str
+                    (clojure.string/join "/" (conj search-tags tag))
+                    " (" count ")")]
+                  [:br]))
+               (filter
+                #(> (second %) 1)
+                (sort-by first tags)))]
+             [:br]
+             (map
+              (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
+              notes)])}))
 
 
 (server/create-server
@@ -114,12 +174,12 @@
    "/refresh"
    _
    (do
-     (swap! notes (constantly (read-notes)))
+     (reload-all)
      {
       :status 200
       :body "ok"}))
   (compojure.core/GET
-   "/explore*"
+   "/note*"
    request
    (let [search-tags (into
                       []
@@ -127,61 +187,21 @@
                        (complement empty?)
                        (.split
                         (or (get-in request [:params :*]) "")
-                        "/")))
-         search-tags-set (into #{} search-tags)
-         notes (filter
-                (fn [note]
-                  (=
-                   (count search-tags)
-                   (count
-                    (filter
-                     #(or
-                       (contains? (:tags note) (str "@" %))
-                       (contains? (:tags note) (str "#" %)))
-                     search-tags))))
-                (deref notes))
-         tags (reduce
-               (fn [state tag]
-                 (if (not (contains? search-tags-set tag))
-                   (update-in
-                    state
-                    [tag]
-                    #(inc (or % 0)))
-                   state))
-               {}
-               (map
-                #(.substring % 1)
-                (mapcat
-                 :tags
-                 notes)))]
-     (println "[explore]" search-tags)
-     {
-      :status 200
-      :body (hiccup/html
-             [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
-              [:table {:style "border-collapse:collapse;"}
-               (map
-                (fn [[tag count]]
-                  (list
-                   [:a
-                    {
-                     :href (str
-                            "/explore/"
-                            (clojure.string/join
-                             "/"
-                             (conj search-tags tag)))}
-                    (str
-                     (clojure.string/join "/" (conj search-tags tag))
-                     " (" count ")")]
-                   [:br]))
-                (filter
-                 #(> (second %) 1)
-                 (sort-by first tags)))]
-              [:br]
-              (map
-               (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
-               notes)])}))
+                        "/")))]
+     (search "note" (deref notes) search-tags)))
   (compojure.core/GET
+   "/todo*"
+   request
+   (let [search-tags (into
+                      []
+                      (filter
+                       (complement empty?)
+                       (.split
+                        (or (get-in request [:params :*]) "")
+                        "/")))]
+     (search "todo" (deref todos) search-tags)))  
+  ;; deprecated, was using notes to summarize tags
+  #_(compojure.core/GET
    "/list*"
    request
    (let [search-tags (filter
@@ -218,7 +238,7 @@
   (new
    Thread
    #(while true
-      (swap! notes (constantly (read-notes)))
+      (reload-all)
       (println "[refresh]" (System/currentTimeMillis))
       (Thread/sleep 60000))))
 (.start cron)
