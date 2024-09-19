@@ -5,13 +5,17 @@
   (:require
    [compojure.core :as compojure]
    [hiccup.core :as hiccup]
-   
+
+   [clj-common.as :as as]
    [clj-common.http-server :as server]
    [clj-common.io :as io]
    [clj-common.localfs :as fs]
    [clj-common.path :as path]))
 
-(def notes-path ["Users" "vanja" "projects" "notes" "notes.md"])
+(def notes-path-seq
+  [
+   ["Users" "vanja" "projects" "notes" "notes.md"]
+   ["Users" "vanja" "projects" "notes" "boxes.md"]])
 (def todo-path ["Users" "vanja" "projects" "notes" "todo.md"])
 
 (defn parse-tags [line]
@@ -32,17 +36,28 @@
                       (rest line)
                       tags
                       (str c)))
-                   (recur
-                    (rest line)
-                    tags
-                    (str current c)))
+                   ;; in case of space report tag
+                   (if (= c \ )
+                     (recur
+                      (rest line)
+                      (if (not (empty? current))
+                        (conj tags (.trim current))
+                        tags)
+                      "")
+                    (recur
+                     (rest line)
+                     tags
+                     (str current c))))
                  (if (not (empty? current))
                    (conj tags (.trim current))
                    tags)))]
     (into #{} (filter #(or (.startsWith % "#") (.startsWith % "@")) tags) )))
 
-#_(parse-tags "# #list #divcibare #to")
-#_(parse-tags "# notes concept")
+#_(parse-tags "# #list #divcibare #to") ;; #{"#divcibare" "#to" "#list"}
+#_(parse-tags "# notes concept") ;; #{}
+;; fix on 20240919
+(parse-tags "# #20240917 #disha geospatial") ;; #{"#20240917" "#disha"}
+(parse-tags "# #a #b c d #e") ;; #{"#a" "#b" "#e"}
 
 (defn read-notes [path]
   (with-open [is (fs/input-stream path)]
@@ -83,16 +98,25 @@
             :content (clojure.string/join "\n" buffer)})
           notes)))))
 
-(def notes (atom (read-notes notes-path)))
-(def todos (atom (read-notes todo-path)))
+
+(def notes (atom []))
+(def todos (atom []))
 
 ;; reread notes
 (defn reload-all []
-  (swap! notes (constantly (read-notes notes-path)))
+  (swap! notes (constantly (mapcat
+                            #(read-notes %)
+                            notes-path-seq)))
   (swap! todos (constantly (read-notes todo-path)))
   nil)
 
 (reload-all)
+
+#_(run!
+ println
+ (take 5 (read-notes ["Users" "vanja" "projects" "notes" "boxes.md"])))
+(search "note" (deref notes) ["#box50"])
+
 
 (defn render-note-info [note]
   [:tr
@@ -102,6 +126,82 @@
     [:a
      {:href (str "/view/" (:id note)) :target "_blank"}
      "view"]]])
+
+(defn parse-date [tag]
+  ;; #20240909
+  (when
+      (and
+       (= (count tag) 9)
+       ;; todo
+       ;; check month and day range
+       (.startsWith tag "#2"))
+    (as/as-long (.substring tag 1))))
+
+(defn date [note]
+  (first (filter some? (map parse-date (:tags note)))))
+
+#_(date {:tags #{"#todo" "#20240909"}})
+
+(defn schedule [dataset-name dataset search-tags]
+  (let [search-tags-set (into #{} search-tags)
+        notes (sort-by
+               date
+               (filter
+                (fn [note]
+                  (=
+                   (count search-tags)
+                   (count
+                    (filter
+                     #(or
+                       (contains? (:tags note) (str "@" %))
+                       (contains? (:tags note) (str "#" %)))
+                     search-tags))))
+                (filter
+                 #(some? (date %))
+                 dataset)))
+        tags (reduce
+              (fn [state tag]
+                (if (not (contains? search-tags-set tag))
+                  (update-in
+                   state
+                   [tag]
+                   #(inc (or % 0)))
+                  state))
+              {}
+              (map
+               #(.substring % 1)
+               (mapcat
+                :tags
+                notes)))]
+    (println "[schedule][" dataset-name "]" search-tags)
+    {
+     :status 200
+     :body (hiccup/html
+            [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
+             [:table {:style "border-collapse:collapse;"}
+              (map
+               (fn [[tag count]]
+                 (list
+                  [:a
+                   {
+                    :href (str
+                           "/" dataset-name "/"
+                           (clojure.string/join
+                            "/"
+                            (conj search-tags tag)))}
+                   (str
+                    (clojure.string/join "/" (conj search-tags tag))
+                    " (" count ")")]
+                  [:br]))
+               (filter
+                #(> (second %) 1)
+                (sort-by first tags)))]
+             [:br]
+             (map
+              (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
+              notes)])}))
+
+(schedule "todo" (deref todos) #{"log"})
 
 (defn search [dataset-name dataset search-tags]
   (let [search-tags-set (into #{} search-tags)
@@ -158,7 +258,6 @@
               (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
               notes)])}))
 
-
 (server/create-server
  7099
  (compojure.core/routes
@@ -189,6 +288,17 @@
                         (or (get-in request [:params :*]) "")
                         "/")))]
      (search "note" (deref notes) search-tags)))
+  (compojure.core/GET
+   "/schedule*"
+   request
+   (let [search-tags (into
+                      []
+                      (filter
+                       (complement empty?)
+                       (.split
+                        (or (get-in request [:params :*]) "")
+                        "/")))]
+     (schedule "todo" (deref todos) #{})))  
   (compojure.core/GET
    "/todo*"
    request
