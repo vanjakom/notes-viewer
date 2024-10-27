@@ -115,7 +115,7 @@
 #_(run!
  println
  (take 5 (read-notes ["Users" "vanja" "projects" "notes" "boxes.md"])))
-(search "note" (deref notes) ["#box50"])
+#_(search "note" (deref notes) ["#box50"])
 
 
 (defn render-note-info [note]
@@ -201,7 +201,7 @@
               (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
               notes)])}))
 
-(schedule "todo" (deref todos) #{"log"})
+#_(schedule "todo" (deref todos) #{"log"})
 
 (defn search [dataset-name dataset search-tags]
   (let [search-tags-set (into #{} search-tags)
@@ -258,97 +258,96 @@
               (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
               notes)])}))
 
-(server/create-server
- 7099
- (compojure.core/routes
-  (compojure.core/GET
-   "/view/:id"
-   [id]
-   (if-let [note (first (filter #(= (:id %) id) (deref notes)))]
-     {
-      :status 200
-      :body (:content note)}
-     {:status 404}))
-  (compojure.core/GET
-   "/refresh"
-   _
-   (do
-     (reload-all)
-     {
-      :status 200
-      :body "ok"}))
-  (compojure.core/GET
-   "/note*"
-   request
-   (let [search-tags (into
-                      []
-                      (filter
-                       (complement empty?)
-                       (.split
-                        (or (get-in request [:params :*]) "")
-                        "/")))]
-     (search "note" (deref notes) search-tags)))
-  (compojure.core/GET
-   "/schedule*"
-   request
-   (let [search-tags (into
-                      []
-                      (filter
-                       (complement empty?)
-                       (.split
-                        (or (get-in request [:params :*]) "")
-                        "/")))]
-     (schedule "todo" (deref todos) #{})))  
-  (compojure.core/GET
-   "/todo*"
-   request
-   (let [search-tags (into
-                      []
-                      (filter
-                       (complement empty?)
-                       (.split
-                        (or (get-in request [:params :*]) "")
-                        "/")))]
-     (search "todo" (deref todos) search-tags)))  
-  ;; deprecated, was using notes to summarize tags
-  #_(compojure.core/GET
-   "/list*"
-   request
-   (let [search-tags (filter
-                      (complement empty?)
-                      (.split
-                       (or (get-in request [:params :*]) "")
-                       "/"))]
-     (println "[list]" search-tags)
-     {
-      :status 200
-      :body (hiccup/html
-             [:body {:style "font-family:arial;"}
-              [:table {:style "border-collapse:collapse;"}
-               (map
-                render-note-info
-                (filter
-                 (fn [note]
-                   (=
-                    (count search-tags)
-                    (count
-                     (filter
-                      #(or
-                        (contains? (:tags note) (str "@" %))
-                        (contains? (:tags note) (str "#" %)))
-                      search-tags))))
-                 (deref notes)))]])}))))
-
-
-(defn -main [& args]
-  (println "running"))
-
-;; refresh notes on minute interval
-(def cron
-  (new
-   Thread
-   #(while true
-      (reload-all)
-      (println "[refresh]" (System/currentTimeMillis))
-      (Thread/sleep 60000))))
-(.start cron)
+(defn start-server []
+  (println "starting server")
+  (server/create-server
+   7099
+   (compojure.core/routes
+    (compojure.core/GET
+     "/view/:id"
+     [id]
+     (if-let [note (first (filter #(= (:id %) id) (deref notes)))]
+       {
+        :status 200
+        :body (:content note)}
+       {:status 404}))
+    (compojure.core/GET
+     "/refresh"
+     _
+     (do
+       (reload-all)
+       {
+        :status 200
+        :body "ok"}))
+    (compojure.core/GET
+     "/note*"
+     request
+     (let [search-tags (into
+                        []
+                        (filter
+                         (complement empty?)
+                         (.split
+                          (or (get-in request [:params :*]) "")
+                          "/")))]
+       (search "note" (deref notes) search-tags)))
+    (compojure.core/GET
+     "/schedule*"
+     request
+     (let [search-tags (into
+                        []
+                        (filter
+                         (complement empty?)
+                         (.split
+                          (or (get-in request [:params :*]) "")
+                          "/")))]
+       (schedule "todo" (deref todos) #{})))  
+    (compojure.core/GET
+     "/todo*"
+     request
+     (let [search-tags (into
+                        []
+                        (filter
+                         (complement empty?)
+                         (.split
+                          (or (get-in request [:params :*]) "")
+                          "/")))]
+       (search "todo" (deref todos) search-tags)))  
+    ;; deprecated, was using notes to summarize tags
+    #_(compojure.core/GET
+       "/list*"
+       request
+       (let [search-tags (filter
+                          (complement empty?)
+                          (.split
+                           (or (get-in request [:params :*]) "")
+                           "/"))]
+         (println "[list]" search-tags)
+         {
+          :status 200
+          :body (hiccup/html
+                 [:body {:style "font-family:arial;"}
+                  [:table {:style "border-collapse:collapse;"}
+                   (map
+                    render-note-info
+                    (filter
+                     (fn [note]
+                       (=
+                        (count search-tags)
+                        (count
+                         (filter
+                          #(or
+                            (contains? (:tags note) (str "@" %))
+                            (contains? (:tags note) (str "#" %)))
+                          search-tags))))
+                     
+                     (deref notes)))]])}))))
+  
+  ;; refresh notes on minute interval
+  (println "starting cron")
+  (.start
+   (new
+    Thread
+    #(while true
+       (reload-all)
+       (println "[refresh]" (System/currentTimeMillis))
+       (Thread/sleep 60000)))))
