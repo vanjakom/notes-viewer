@@ -76,7 +76,8 @@
                 {
                  :id (uuid)
                  :tags tags
-                 :content (clojure.string/join "\n" buffer)})
+                 :header (first buffer)
+                 :content (clojure.string/join "\n" (rest buffer))})
                new-tags
                [line])
               (recur
@@ -95,7 +96,8 @@
            {
             :id (uuid)
             :tags tags
-            :content (clojure.string/join "\n" buffer)})
+            :header (first buffer)
+            :content (clojure.string/join "\n" (rest buffer))})
           notes)))))
 
 
@@ -198,7 +200,11 @@
                 (sort-by first tags)))]
              [:br]
              (map
-              (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
+              (fn [note]
+                (list
+                 [:b (:header note)]
+                 [:br]
+                 [:pre (StringEscapeUtils/escapeHtml (:content note))]))
               notes)])}))
 
 #_(schedule "todo" (deref todos) #{"log"})
@@ -255,7 +261,11 @@
                 (sort-by first tags)))]
              [:br]
              (map
-              (fn [note] [:pre (StringEscapeUtils/escapeHtml (:content note))])
+              (fn [note]
+                (list
+                 [:b (:header note)]
+                 [:br]
+                 [:pre (StringEscapeUtils/escapeHtml (:content note))]))
               notes)])}))
 
 (defn start-server []
@@ -269,7 +279,7 @@
      (if-let [note (first (filter #(= (:id %) id) (deref notes)))]
        {
         :status 200
-        :body (:content note)}
+        :body (str (:header note) "\n" (:content note))}
        {:status 404}))
     (compojure.core/GET
      "/refresh"
