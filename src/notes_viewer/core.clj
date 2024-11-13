@@ -56,8 +56,8 @@
 #_(parse-tags "# #list #divcibare #to") ;; #{"#divcibare" "#to" "#list"}
 #_(parse-tags "# notes concept") ;; #{}
 ;; fix on 20240919
-(parse-tags "# #20240917 #disha geospatial") ;; #{"#20240917" "#disha"}
-(parse-tags "# #a #b c d #e") ;; #{"#a" "#b" "#e"}
+#_(parse-tags "# #20240917 #disha geospatial") ;; #{"#20240917" "#disha"}
+#_(parse-tags "# #a #b c d #e") ;; #{"#a" "#b" "#e"}
 
 (defn read-notes [path]
   (with-open [is (fs/input-stream path)]
@@ -128,6 +128,55 @@
     [:a
      {:href (str "/view/" (:id note)) :target "_blank"}
      "view"]]])
+
+;; chatgpt with alter
+(defn replace-http-links-with-anchor [s]
+  "Replaces http:// links outside of <pre> blocks"
+  (clojure.string/replace
+   s
+   #"(?:<pre>[\s\S]*?</pre>)|http://[^\s<]+"
+   (fn [match]
+     (if (.startsWith match "<pre>")
+       match ;; Leave content inside <pre> blocks unchanged
+       (str "<a target=\"_blank\" href=\"" match "\">" match "</a>")))))
+
+;; chatgpt with alter
+(defn replace-https-links-with-anchor [s]
+  "Replaces https:// links outside of <pre> blocks"
+  (clojure.string/replace
+   s
+   #"(?:<pre>[\s\S]*?</pre>)|https://[^\s<]+"
+   (fn [match]
+     (if (.startsWith match "<pre>")
+       match ;; Leave content inside <pre> blocks unchanged
+       (str "<a target=\"_blank\" href=\"" match "\">" match "</a>")))))
+
+;; chatgpt
+(defn replace-newlines-with-br [s]
+  (clojure.string/replace s #"\n" "<br>"))
+
+;; chatgpt, with alter
+(defn replace-code-blocks-with-pre [s]
+  (clojure.string/replace
+   s
+   #"```([\s\S]*?)```"
+   (fn [match]
+     (str "<pre>" (StringEscapeUtils/escapeHtml (second match)) "</pre>"))))
+
+#_(replace-http-links-with-anchor "test http://google.com<br>")
+;; "test <a target=\"_blank\" href=\"http://google.com<br>\">http://google.com<br></a>"
+
+(defn render-note [note]
+  (list
+   [:b (:header note)]
+   [:br]
+   [:div
+    (->
+     (:content note)
+     replace-code-blocks-with-pre
+     replace-http-links-with-anchor
+     replace-https-links-with-anchor
+     replace-newlines-with-br)]))
 
 (defn parse-date [tag]
   ;; #20240909
@@ -200,11 +249,7 @@
                 (sort-by first tags)))]
              [:br]
              (map
-              (fn [note]
-                (list
-                 [:b (:header note)]
-                 [:br]
-                 [:pre (StringEscapeUtils/escapeHtml (:content note))]))
+              render-note
               notes)])}))
 
 #_(schedule "todo" (deref todos) #{"log"})
@@ -261,11 +306,7 @@
                 (sort-by first tags)))]
              [:br]
              (map
-              (fn [note]
-                (list
-                 [:b (:header note)]
-                 [:br]
-                 [:pre (StringEscapeUtils/escapeHtml (:content note))]))
+              render-note
               notes)])}))
 
 (defn start-server []
