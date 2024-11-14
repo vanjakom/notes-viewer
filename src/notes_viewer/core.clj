@@ -176,7 +176,8 @@
      replace-code-blocks-with-pre
      replace-http-links-with-anchor
      replace-https-links-with-anchor
-     replace-newlines-with-br)]))
+     replace-newlines-with-br)]
+   [:br]))
 
 (defn parse-date [tag]
   ;; #20240909
@@ -227,30 +228,34 @@
     (println "[schedule][" dataset-name "]" search-tags)
     {
      :status 200
+     :headers {
+               "Content-Type" "text/html; charset=utf-8"}
      :body (hiccup/html
-            [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
-             [:table {:style "border-collapse:collapse;"}
-              (map
-               (fn [[tag count]]
-                 (list
-                  [:a
-                   {
-                    :href (str
-                           "/" dataset-name "/"
-                           (clojure.string/join
-                            "/"
-                            (conj search-tags tag)))}
-                   (str
-                    (clojure.string/join "/" (conj search-tags tag))
-                    " (" count ")")]
-                  [:br]))
-               (filter
-                #(> (second %) 1)
-                (sort-by first tags)))]
-             [:br]
-             (map
-              render-note
-              notes)])}))
+               [:head
+                [:meta {:charset "UTF-8"}]]
+               [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
+                [:table {:style "border-collapse:collapse;"}
+                 (map
+                  (fn [[tag count]]
+                    (list
+                     [:a
+                      {
+                       :href (str
+                              "/" dataset-name "/"
+                              (clojure.string/join
+                               "/"
+                               (conj search-tags tag)))}
+                      (str
+                       (clojure.string/join "/" (conj search-tags tag))
+                       " (" count ")")]
+                     [:br]))
+                  (filter
+                   #(> (second %) 1)
+                   (sort-by first tags)))]
+                [:br]
+                (map
+                 render-note
+                 notes)])}))
 
 #_(schedule "todo" (deref todos) #{"log"})
 
@@ -284,30 +289,34 @@
     (println "[" dataset-name "]" search-tags)
     {
      :status 200
+     :headers {
+               "Content-Type" "text/html; charset=utf-8"}
      :body (hiccup/html
-            [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
-             [:table {:style "border-collapse:collapse;"}
-              (map
-               (fn [[tag count]]
-                 (list
-                  [:a
-                   {
-                    :href (str
-                           "/" dataset-name "/"
-                           (clojure.string/join
-                            "/"
-                            (conj search-tags tag)))}
-                   (str
-                    (clojure.string/join "/" (conj search-tags tag))
-                    " (" count ")")]
-                  [:br]))
-               (filter
-                #(> (second %) 1)
-                (sort-by first tags)))]
-             [:br]
-             (map
-              render-note
-              notes)])}))
+               [:head
+                [:meta {:charset "UTF-8"}]]
+               [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
+                [:table {:style "border-collapse:collapse;"}
+                 (map
+                  (fn [[tag count]]
+                    (list
+                     [:a
+                      {
+                       :href (str
+                              "/" dataset-name "/"
+                              (clojure.string/join
+                               "/"
+                               (conj search-tags tag)))}
+                      (str
+                       (clojure.string/join "/" (conj search-tags tag))
+                       " (" count ")")]
+                     [:br]))
+                  (filter
+                   #(> (second %) 1)
+                   (sort-by first tags)))]
+                [:br]
+                (map
+                 render-note
+                 notes)])}))
 
 (defn start-server []
   (println "starting server")
@@ -402,3 +411,6 @@
        (reload-all)
        (println "[refresh]" (System/currentTimeMillis))
        (Thread/sleep 60000)))))
+
+#_(start-server)
+#_(clj-common.http-server/stop-server 7099)
