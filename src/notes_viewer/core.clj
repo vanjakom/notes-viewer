@@ -7,6 +7,7 @@
    [hiccup.core :as hiccup]
 
    [clj-common.as :as as]
+   [clj-common.context :as context]
    [clj-common.http-server :as server]
    [clj-common.io :as io]
    [clj-common.localfs :as fs]
@@ -59,6 +60,13 @@
 #_(parse-tags "# #20240917 #disha geospatial") ;; #{"#20240917" "#disha"}
 #_(parse-tags "# #a #b c d #e") ;; #{"#a" "#b" "#e"}
 
+(defn create-note [tags header content]
+  {
+   :id (uuid)
+   :tags tags
+   :header header
+   :content content})
+
 (defn read-notes [path]
   (with-open [is (fs/input-stream path)]
     (loop [lines (io/input-stream->line-seq is)
@@ -73,11 +81,8 @@
                (rest lines)
                (conj
                 notes
-                {
-                 :id (uuid)
-                 :tags tags
-                 :header (first buffer)
-                 :content (clojure.string/join "\n" (rest buffer))})
+                (create-note tags (first buffer)
+                             (clojure.string/join "\n" (rest buffer))))
                new-tags
                [line])
               (recur
@@ -93,13 +98,83 @@
         (if (not (empty? buffer))
           (conj
            notes
-           {
-            :id (uuid)
-            :tags tags
-            :header (first buffer)
-            :content (clojure.string/join "\n" (rest buffer))})
+           (create-note tags (first buffer)
+                        (clojure.string/join "\n" (rest buffer))))
           notes)))))
 
+(defn process-notes-path
+  "Reads notes file respecting structure and order and gives possibility
+  to process-fn to alter note. Output is stored in output path.
+  Note: currently state of process fn is not supported, must be stored
+  externally. This could be useful if order of notes is required."
+  ;; todo maybe to support output over process-fn
+  ;; todo multiple args process fn ( start, process, close )
+  ;; todo support same path / output-path ( in place process )
+  [context]
+  (let [configuration (context/configuration context)
+        path (get configuration :path)
+        output-path (get configuration :output-path)
+        process-fn (get configuration :process-fn)]
+    (context/trace context (str "processing: " path))
+    (context/trace context (str "writing to: " output-path))
+    (with-open [is (fs/input-stream path)
+                os (fs/output-stream output-path)]
+      ;; copy with modifications of read-notes
+      (let [write-note-fn (fn [note]
+                            ;; writing header instead of serializing tags
+                            (io/write-line
+                             os
+                             (:header note))
+                            (io/write-line
+                             os
+                             (:content note)))]
+        (loop [lines (io/input-stream->line-seq is)
+               tags #{}
+               buffer []]
+          (if-let [line (first lines)]
+            (if (.startsWith line "# ")
+              (let [new-tags (parse-tags line)]
+                (if (not (empty? buffer))
+                  (let [note (process-fn
+                              (create-note
+                               tags
+                               (first buffer)
+                               (clojure.string/join "\n" (rest buffer))))]
+                    (when note (write-note-fn note))
+                    (recur
+                     (rest lines)
+                     new-tags
+                     [line]))
+                  (recur
+                   (rest lines)
+                   new-tags
+                   [])))
+              (recur
+               (rest lines)
+               tags
+               (conj buffer line)))
+            (if (not (empty? buffer))
+              (let [note (process-fn
+                          (create-note
+                           tags
+                           (first buffer)
+                           (clojure.string/join "\n" (rest buffer))))]
+                (when note (write-note-fn note))))))))
+    (context/trace context "processing finished")))
+
+;; test extract for zanimljiva-geografija:kako-mapirati
+#_(process-notes-path
+   (context/create-stdout-context
+    {
+     :path ["Users" "vanja" "projects" "notes" "notes.md"]
+     :output-path ["Users" "vanja" "projects" "zanimljiva-geografija" "blog" "tags.md"]
+     :process-fn (fn [note]
+                   (when (and
+                          (contains? (:tags note) "#osm")
+                          (contains? (:tags note) "#map")
+                          (contains? (:tags note) "#tag")
+                          (contains? (:tags note) "#export"))
+                     note))}))
 
 (def notes (atom []))
 (def todos (atom []))
@@ -151,6 +226,16 @@
        match ;; Leave content inside <pre> blocks unchanged
        (str "<a target=\"_blank\" href=\"" match "\">" match "</a>")))))
 
+(defn replace-file-links-with-anchor [s]
+  "Replaces file:// links outside of <pre> blocks"
+  (clojure.string/replace
+   s
+   #"(?:<pre>[\s\S]*?</pre>)|file://[^\s<]+"
+   (fn [match]
+     (if (.startsWith match "<pre>")
+       match ;; Leave content inside <pre> blocks unchanged
+       (str "<a target=\"_blank\" href=\"" match "\">" match "</a>")))))
+
 ;; chatgpt
 (defn replace-newlines-with-br [s]
   (clojure.string/replace s #"\n" "<br>"))
@@ -176,6 +261,7 @@
      replace-code-blocks-with-pre
      replace-http-links-with-anchor
      replace-https-links-with-anchor
+     replace-file-links-with-anchor
      replace-newlines-with-br)]
    [:br]))
 
