@@ -265,6 +265,12 @@
      replace-newlines-with-br)]
    [:br]))
 
+(defn preview-note [note]
+  (list
+   [:b (:header note)]
+   [:br]
+   [:br]))
+
 (defn parse-date [tag]
   ;; #20240909
   (when
@@ -273,7 +279,7 @@
        ;; todo
        ;; check month and day range
        (.startsWith tag "#2"))
-    (as/as-long (.substring tag 1))))
+      (as/as-long (.substring tag 1))))
 
 (defn date [note]
   (first (filter some? (map parse-date (:tags note)))))
@@ -345,7 +351,7 @@
 
 #_(schedule "todo" (deref todos) #{"log"})
 
-(defn search [dataset-name dataset search-tags]
+(defn search [dataset-name dataset search-tags preview]
   (let [search-tags-set (into #{} search-tags)
         notes (filter
                (fn [note]
@@ -400,9 +406,9 @@
                    #(> (second %) 1)
                    (sort-by first tags)))]
                 [:br]
-                (map
-                 render-note
-                 notes)])}))
+                (if preview
+                  (map preview-note notes)
+                  (map render-note notes))])}))
 
 (defn start-server []
   (println "starting server")
@@ -435,7 +441,7 @@
                          (.split
                           (or (get-in request [:params :*]) "")
                           "/")))]
-       (search "note" (deref notes) search-tags)))
+       (search "note" (deref notes) search-tags false)))
     (compojure.core/GET
      "/schedule*"
      request
@@ -446,7 +452,18 @@
                          (.split
                           (or (get-in request [:params :*]) "")
                           "/")))]
-       (schedule "todo" (deref todos) #{})))  
+       (schedule "todo" (deref todos) #{})))
+    (compojure.core/GET
+     "/preview*"
+     request
+     (let [search-tags (into
+                        []
+                        (filter
+                         (complement empty?)
+                         (.split
+                          (or (get-in request [:params :*]) "")
+                          "/")))]
+       (search "todo" (deref todos) search-tags true)))
     (compojure.core/GET
      "/todo*"
      request
@@ -457,7 +474,7 @@
                          (.split
                           (or (get-in request [:params :*]) "")
                           "/")))]
-       (search "todo" (deref todos) search-tags)))  
+       (search "todo" (deref todos) search-tags false)))
     ;; deprecated, was using notes to summarize tags
     #_(compojure.core/GET
        "/list*"
