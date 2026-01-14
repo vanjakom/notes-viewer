@@ -15,9 +15,13 @@
 
 (def notes-path-seq
   [
-   ["Users" "vanja" "projects" "notes" "notes.md"]
-   ["Users" "vanja" "projects" "notes" "boxes.md"]])
-(def todo-path ["Users" "vanja" "projects" "notes" "todo.md"])
+   [["Users" "vanja" "projects" "notes" "notes.md"] #{}]
+   [["Users" "vanja" "projects" "notes" "boxes.md"] #{}]])
+
+(def todo-path-seq
+  [
+   [["Users" "vanja" "projects" "notes" "sf-todo.md"] #{"#sf"}]
+   [["Users" "vanja" "projects" "notes" "todo.md"] #{}]])
 
 (defn parse-tags [line]
   (let [line (if (.startsWith line "# ")
@@ -67,7 +71,7 @@
    :header header
    :content content})
 
-(defn read-notes [path]
+(defn read-notes [path default-tags]
   (with-open [is (fs/input-stream path)]
     (loop [lines (io/input-stream->line-seq is)
            notes []
@@ -81,7 +85,7 @@
                (rest lines)
                (conj
                 notes
-                (create-note tags (first buffer)
+                (create-note (into tags default-tags) (first buffer)
                              (clojure.string/join "\n" (rest buffer))))
                new-tags
                [line])
@@ -98,7 +102,7 @@
         (if (not (empty? buffer))
           (conj
            notes
-           (create-note tags (first buffer)
+           (create-note (into tags default-tags) (first buffer)
                         (clojure.string/join "\n" (rest buffer))))
           notes)))))
 
@@ -182,9 +186,11 @@
 ;; reread notes
 (defn reload-all []
   (swap! notes (constantly (mapcat
-                            #(read-notes %)
+                            #(read-notes (first %) (second %))
                             notes-path-seq)))
-  (swap! todos (constantly (read-notes todo-path)))
+  (swap! todos (constantly (mapcat
+                            #(read-notes (first %) (second %))
+                            todo-path-seq)))
   nil)
 
 (reload-all)
