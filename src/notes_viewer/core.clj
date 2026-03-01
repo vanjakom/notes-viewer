@@ -15,17 +15,16 @@
 
 (def notes-path-seq
   [
-   [["Users" "vanja" "projects" "notes" "notes.md"] #{}]
-   [["Users" "vanja" "projects" "notes" "boxes.md"] #{}]])
+   [["Users" "vanja" "projects" "notes" "notes.md"] #{"#note"}]
+   [["Users" "vanja" "projects" "notes" "boxes.md"] #{"#note"}]
 
-(def todo-path-seq
-  [
-   [["Users" "vanja" "projects" "notes" "sf-todo.md"] #{"#sf"}]
-   [["Users" "vanja" "projects" "notes" "inicijative" "ravni.md"] #{"#ravni"}]
-   [["Users" "vanja" "projects" "notes" "inicijative" "pss.md"] #{"#pss"}]
-   [["Users" "vanja" "projects" "notes" "inicijative" "trek-mate.md"] #{"#tm"}]
-   [["Users" "vanja" "projects" "notes" "inicijative" "supplyframe.md"] #{"#sf"}]   
-   [["Users" "vanja" "projects" "notes" "todo.md"] #{}]])
+   [["Users" "vanja" "projects" "notes" "sf-todo.md"] #{"#todo" "#sf"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "ravni.md"] #{"#todo" "#ravni"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "pss.md"] #{"#todo" "#pss"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "trek-mate.md"] #{"#todo" "#tm"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "supplyframe.md"] #{"#todo" "#sf"}]   
+   [["Users" "vanja" "projects" "notes" "todo.md"] #{"#todo"}]
+   ])
 
 (defn parse-tags [line]
   (let [line (if (.startsWith line "# ")
@@ -89,8 +88,19 @@
                (rest lines)
                (conj
                 notes
-                (create-note (into tags default-tags) (first buffer)
-                             (clojure.string/join "\n" (rest buffer))))
+                (create-note
+                 (into tags default-tags)
+                 ;; 20260301
+                 ;; adding default tags from file to header
+                 (if (> (count (first buffer))2)
+                   (str
+                    "# "
+                    (clojure.string/join " " (sort default-tags))
+                    " "
+                    (.substring (first buffer) 2))
+                   ;; only few of problematic / invalid notes
+                   (first buffer))
+                 (clojure.string/join "\n" (rest buffer))))
                new-tags
                [line])
               (recur
@@ -106,8 +116,19 @@
         (if (not (empty? buffer))
           (conj
            notes
-           (create-note (into tags default-tags) (first buffer)
-                        (clojure.string/join "\n" (rest buffer))))
+           (create-note
+            (into tags default-tags)
+            ;; 20260301
+            ;; adding default tags from file to header
+            (if (> (count (first buffer))2)
+              (str
+               "# "
+               (clojure.string/join " " (sort default-tags))
+               " "
+               (.substring (first buffer) 2))
+              ;; only few of problematic / invalid notes
+              (first buffer))
+            (clojure.string/join "\n" (rest buffer))))
           notes)))))
 
 (defn process-notes-path
@@ -185,16 +206,12 @@
                      note))}))
 
 (def notes (atom []))
-(def todos (atom []))
 
 ;; reread notes
 (defn reload-all []
   (swap! notes (constantly (mapcat
                             #(read-notes (first %) (second %))
                             notes-path-seq)))
-  (swap! todos (constantly (mapcat
-                            #(read-notes (first %) (second %))
-                            todo-path-seq)))
   nil)
 
 (reload-all)
@@ -203,7 +220,6 @@
  println
  (take 5 (read-notes ["Users" "vanja" "projects" "notes" "boxes.md"])))
 #_(search "note" (deref notes) ["#box50"])
-
 
 (defn render-note-info [note]
   [:tr
@@ -264,6 +280,14 @@
 (defn render-note [note]
   (list
    [:b (:header note)]
+   " "
+   [:a
+    {:href (str
+            "/"
+            (clojure.string/join
+             "/"
+             (map #(.substring % 1) (:tags note))))}
+    "share"]
    [:br]
    [:div
     (->
@@ -296,20 +320,20 @@
 
 #_(date {:tags #{"#todo" "#20240909"}})
 
-(defn schedule [dataset-name dataset search-tags]
-  (let [search-tags-set (into #{} search-tags)
+(defn schedule [dataset search-tags]
+  (let [search-tags-set (into #{"todo"} search-tags)
         notes (sort-by
                date
                (filter
                 (fn [note]
                   (=
-                   (count search-tags)
+                   (count search-tags-set)
                    (count
                     (filter
                      #(or
                        (contains? (:tags note) (str "@" %))
                        (contains? (:tags note) (str "#" %)))
-                     search-tags))))
+                     search-tags-set))))
                 (filter
                  #(some? (date %))
                  dataset)))
@@ -327,7 +351,7 @@
                (mapcat
                 :tags
                 notes)))]
-    (println "[schedule][" dataset-name "]" search-tags)
+    (println "[schedule]" search-tags)
     {
      :status 200
      :headers {
@@ -343,7 +367,7 @@
                      [:a
                       {
                        :href (str
-                              "/" dataset-name "/"
+                              "/"
                               (clojure.string/join
                                "/"
                                (conj search-tags tag)))}
@@ -361,7 +385,7 @@
 
 #_(schedule "todo" (deref todos) #{"log"})
 
-(defn search [dataset-name dataset search-tags preview]
+(defn search [dataset search-tags preview]
   (let [search-tags-set (into #{} search-tags)
         notes (filter
                (fn [note]
@@ -388,7 +412,7 @@
                (mapcat
                 :tags
                 notes)))]
-    (println "[" dataset-name "]" search-tags)
+    (println "[search]" search-tags)
     {
      :status 200
      :headers {
@@ -404,7 +428,7 @@
                      [:a
                       {
                        :href (str
-                              "/" dataset-name "/"
+                              "/"
                               (clojure.string/join
                                "/"
                                (conj search-tags tag)))}
@@ -420,100 +444,91 @@
                   (map preview-note notes)
                   (map render-note notes))])}))
 
+#_(search (deref notes) #{"icloud"} false)
+
 (defn start-server []
   (println "starting server")
   (server/create-server
    7099
    (compojure.core/routes
     (compojure.core/GET
-     "/view/:id"
-     [id]
-     (if-let [note (first (filter #(= (:id %) id) (deref notes)))]
-       {
-        :status 200
-        :body (str (:header note) "\n" (:content note))}
-       {:status 404}))
+        "/view/:id"
+        [id]
+        (if-let [note (first (filter #(= (:id %) id) (deref notes)))]
+          {
+           :status 200
+           :body (str (:header note) "\n" (:content note))}
+          {:status 404}))
     (compojure.core/GET
-     "/refresh"
-     _
-     (do
-       (reload-all)
-       {
-        :status 200
-        :body "ok"}))
+        "/refresh"
+        _
+        (do
+          (reload-all)
+          {
+           :status 200
+           :body "ok"}))
     (compojure.core/GET
-     "/note*"
-     request
-     (let [search-tags (into
-                        []
-                        (filter
-                         (complement empty?)
-                         (.split
-                          (or (get-in request [:params :*]) "")
-                          "/")))]
-       (search "note" (deref notes) search-tags false)))
+        "/schedule*"
+        request
+        (let [search-tags (into
+                           []
+                           (filter
+                            (complement empty?)
+                            (.split
+                             (or (get-in request [:params :*]) "")
+                             "/")))]
+          (schedule (deref notes) #{})))
     (compojure.core/GET
-     "/schedule*"
-     request
-     (let [search-tags (into
-                        []
-                        (filter
-                         (complement empty?)
-                         (.split
-                          (or (get-in request [:params :*]) "")
-                          "/")))]
-       (schedule "todo" (deref todos) #{})))
+        "/preview*"
+        request
+        (let [search-tags (into
+                           []
+                           (filter
+                            (complement empty?)
+                            (.split
+                             (or (get-in request [:params :*]) "")
+                             "/")))]
+          (search (deref notes) search-tags true)))
     (compojure.core/GET
-     "/preview*"
-     request
-     (let [search-tags (into
-                        []
-                        (filter
-                         (complement empty?)
-                         (.split
-                          (or (get-in request [:params :*]) "")
-                          "/")))]
-       (search "todo" (deref todos) search-tags true)))
-    (compojure.core/GET
-     "/todo*"
-     request
-     (let [search-tags (into
-                        []
-                        (filter
-                         (complement empty?)
-                         (.split
-                          (or (get-in request [:params :*]) "")
-                          "/")))]
-       (search "todo" (deref todos) search-tags false)))
+        "/*"
+        request
+        (let [search-tags (into
+                           []
+                           (filter
+                            (complement empty?)
+                            (.split
+                             (or (get-in request [:params :*]) "")
+                             "/")))]
+          (search (deref notes) search-tags false)))
     ;; deprecated, was using notes to summarize tags
     #_(compojure.core/GET
-       "/list*"
-       request
-       (let [search-tags (filter
-                          (complement empty?)
-                          (.split
-                           (or (get-in request [:params :*]) "")
-                           "/"))]
-         (println "[list]" search-tags)
-         {
-          :status 200
-          :body (hiccup/html
-                 [:body {:style "font-family:arial;"}
-                  [:table {:style "border-collapse:collapse;"}
-                   (map
-                    render-note-info
-                    (filter
-                     (fn [note]
-                       (=
-                        (count search-tags)
-                        (count
-                         (filter
-                          #(or
-                            (contains? (:tags note) (str "@" %))
-                            (contains? (:tags note) (str "#" %)))
-                          search-tags))))
+          "/list*"
+          request
+          (let [search-tags (filter
+                             (complement empty?)
+                             (.split
+                              (or (get-in request [:params :*]) "")
+                              "/"))]
+            (println "[list]" search-tags)
+            {
+             :status 200
+             :body (hiccup/html
+                       [:body {:style "font-family:arial;"}
+                        [:table {:style "border-collapse:collapse;"}
+                         (map
+                          render-note-info
+                          (filter
+                           (fn [note]
+                             (=
+                              (count search-tags)
+                              (count
+                               (filter
+                                #(or
+                                  (contains? (:tags note) (str "@" %))
+                                  (contains? (:tags note) (str "#" %)))
+                                search-tags))))
                      
-                     (deref notes)))]])}))))
+                           (deref notes)))]])}))))
   
   ;; refresh notes on minute interval
   (println "starting cron")
