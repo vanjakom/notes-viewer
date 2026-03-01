@@ -21,6 +21,10 @@
 (def todo-path-seq
   [
    [["Users" "vanja" "projects" "notes" "sf-todo.md"] #{"#sf"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "ravni.md"] #{"#ravni"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "pss.md"] #{"#pss"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "trek-mate.md"] #{"#tm"}]
+   [["Users" "vanja" "projects" "notes" "inicijative" "supplyframe.md"] #{"#sf"}]   
    [["Users" "vanja" "projects" "notes" "todo.md"] #{}]])
 
 (defn parse-tags [line]
