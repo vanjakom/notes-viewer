@@ -202,7 +202,7 @@
 #_(schedule "todo" (deref todos) #{"log"})
 
 ;; todo use search from notemd
-(defn search [dataset search-tags preview]
+(defn search-content [dataset search-tags preview]
   (let [search-tags-set (into #{} search-tags)
         notes (filter
                (fn [note]
@@ -230,38 +230,80 @@
                 :tags
                 notes)))]
     (println "[search]" search-tags)
-    {
-     :status 200
-     :headers {
-               "Content-Type" "text/html; charset=utf-8"}
-     :body (hiccup/html
-               [:head
-                [:meta {:charset "UTF-8"}]]
-               [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
-                [:table {:style "border-collapse:collapse;"}
-                 (map
-                  (fn [[tag count]]
-                    (list
-                     [:a
-                      {
-                       :href (str
-                              "/"
-                              (clojure.string/join
-                               "/"
-                               (conj search-tags tag)))}
-                      (str
-                       (clojure.string/join "/" (conj search-tags tag))
-                       " (" count ")")]
-                     [:br]))
-                  (filter
-                   #(> (second %) 1)
-                   (sort-by first tags)))]
-                [:br]
-                (if preview
-                  (map preview-note notes)
-                  (map render-note notes))])}))
+    (list
+     [:table {:style "border-collapse:collapse;"}
+      (map
+       (fn [[tag count]]
+         (list
+          [:a
+           {
+            :href (str
+                   "/"
+                   (clojure.string/join
+                    "/"
+                    (conj search-tags tag)))}
+           (str
+            (clojure.string/join "/" (conj search-tags tag))
+            " (" count ")")]
+          [:br]))
+       (filter
+        #(> (second %) 1)
+        (sort-by first tags)))]
+     [:br]
+     (if preview
+       (map preview-note notes)
+       (map render-note notes)))))
+
+(defn render-page [& content]
+  {
+   :status 200
+   :headers {
+             "Content-Type" "text/html; charset=utf-8"}
+   :body (hiccup/html
+             [:head
+              [:meta {:charset "UTF-8"}]]
+             [:body {:style "font-family:arial; max-width:100%; overflow-x:hidden;"}
+              content])})
+
+(defn search [dataset search-tags preview]
+  (render-page (search-content dataset search-tags preview)))
 
 #_(search (deref notes) #{"icloud"} false)
+
+(defn query-param [request name]
+  (when-let [query-string (:query-string request)]
+    (some
+     (fn [pair]
+       (let [[key value] (.split pair "=" 2)]
+         (when (= key name)
+           (java.net.URLDecoder/decode (or value "") "UTF-8"))))
+     (.split query-string "&"))))
+
+;; search page with text box, query like "note sf homepage"
+(defn search-form [dataset query]
+  (let [search-tags (into
+                     []
+                     (map
+                      #(if (or (.startsWith % "#") (.startsWith % "@"))
+                         (.substring % 1)
+                         %)
+                      (filter
+                       (complement empty?)
+                       (.split (.trim (or query "")) "\\s+"))))]
+    (render-page
+     [:form {:method "GET" :action "/search" :style "text-align:center;"}
+      [:input {:type "text"
+               :id "q"
+               :name "q"
+               :value (or query "")
+               :autofocus true
+               :style "width:600px; max-width:80%;"}]
+      " "
+      [:button {:type "submit"} "go"]]
+     [:script "document.getElementById('q').select();"]
+     [:br]
+     (when (not (empty? search-tags))
+       (search-content dataset search-tags false)))))
 
 (defn start-server []
   (println "starting server")
@@ -297,6 +339,14 @@
           ;; 20260317 refresh on each search
           (reload-all)
           (schedule (deref notes) #{})))
+    (compojure.core/GET
+        "/search"
+        request
+        (let [query (query-param request "q")
+              query (if (empty? query) "life homepage" query)]
+          ;; 20260317 refresh on each search
+          (reload-all)
+          (search-form (deref notes) query)))
     (compojure.core/GET
         "/preview*"
         request
